@@ -54,7 +54,19 @@ let view (model:Model) dispatch =
         button [ OnClick (fun _ -> dispatch Reset) ] [ str "reset" ] 
         div [] []
         svg [ Style [ Border "1px solid green"; Width (snd model.xlims); Height (snd model.ylims )] ] [
-            circle [ R 25 ] []
+            circle [ 
+              R 60
+              Fable.React.Props.SVGAttr.Fill "green" 
+              Fable.React.Props.SVGAttr.Cx 150
+              Fable.React.Props.SVGAttr.Cy 100
+            ] []
+            circle [ 
+              R 60
+              Fable.React.Props.SVGAttr.Fill "red" 
+              Fable.React.Props.SVGAttr.Cx 350
+              Fable.React.Props.SVGAttr.Cy 100
+            ] []
+            polyline [ Points "0,0 10,10, 20,20, 100,100"; Fable.React.Props.Stroke "black" ] []
         ]
       ] // App
 
