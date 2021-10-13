@@ -15,13 +15,10 @@ module Drawing =
         ctx.clearRect(0.0, 0.0, ctx.canvas.width, ctx.canvas.height)
         ctx
 
-
     let drawPointsOnCanvas (points: Point2dType list) (ctx: Browser.Types.CanvasRenderingContext2D) =
-        ctx.save()
         ctx.lineWidth <- 0.5
         ctx.beginPath()
         ctx.stroke()
-        ctx.restore()
         let rec recurse ps = 
           match ps with 
             | [] ->  ()
@@ -34,7 +31,7 @@ module Drawing =
                             recurse tail
         recurse points
         ctx.stroke()
-        ctx.restore()
+        ctx.closePath()
         ctx
 
     let drawControlPoint (p: Point2dType) (ctx: Browser.Types.CanvasRenderingContext2D) =
@@ -47,6 +44,16 @@ module Drawing =
         ctx.stroke()
         ctx.closePath()
         ctx
+
+    let drawCircle (c: CircleType) (ctx: Browser.Types.CanvasRenderingContext2D) =
+        ctx.save()
+        let (x0, y0) = Point2d.add2 c.Centre (0., 0.)
+        ctx.lineWidth <- 0.5
+        ctx.beginPath()
+        ctx.arc(x0, y0, c.Radius, 0.0, System.Math.PI * 2.0, true)
+        ctx.stroke()
+        ctx.closePath()
+        ctx
      
     let drawBezier (b: QuadraticBezierType)  = 
         drawPointsOnCanvas (bezierPoints b) >> 
@@ -54,13 +61,12 @@ module Drawing =
         drawControlPoint b.Control2 >>
         drawControlPoint b.Control3
     
-
     let drawShape (s: Shape) =
-        let drawCircle circle ctx = ctx
         match s with 
         | QuadraticBezier(bezier) -> drawBezier bezier
         | Circle(circle) -> drawCircle circle
      
     let drawShapes (ss: Shape list) (ctx: Browser.Types.CanvasRenderingContext2D) :Browser.Types.CanvasRenderingContext2D =
-        let doThing ss = drawShape <| List.head ss
-        doThing ss ctx
+        match ss with 
+        | [] -> ctx
+        | _ -> List.reduce (>>) (List.map drawShape ss) <| ctx  // Not sure why List.reduce fails on empty list

@@ -37,7 +37,8 @@ let view (model:Model) dispatch =
   let canvas = drawingcanvas { 
               Props = [ 
                 OnMouseMove( fun e -> toClientXY (e) |> MouseMove |> dispatch )
-                OnMouseDown( fun e -> toClientXY (e) |> MouseDown |> dispatch)
+                OnMouseDown( fun e -> toClientXY (e) |> MouseDown |> dispatch )
+                OnMouseUp( fun _ -> dispatch MouseUp )
                 Style [Width "500px"; Height "500px"]
                 ] ; 
               Redraw =  Drawing.redrawCanvas >>
