@@ -48,3 +48,7 @@ module Circle =
     let alongCurve (c: CircleType) (t: float) :Point2dType =
         let (x0, y0) = c.Centre
         (x0 + System.Math.Cos (2. * System.Math.PI * t), y0 + System.Math.Sin (2. * System.Math.PI * t))
+ 
+type Shape = 
+  | Circle of CircleType
+  | QuadraticBezier of QuadraticBezierType

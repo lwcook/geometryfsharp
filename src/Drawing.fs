@@ -4,6 +4,11 @@ open Geometry
 
 module Drawing =
 
+    let bezierPoints (bezier: QuadraticBezierType) =
+      let flip f a b = f b a
+      (flip List.map [0. .. 0.01 .. 1.01] <| QuadraticBezier.alongCurve bezier)
+
+
     let redrawCanvas (ctx: Browser.Types.CanvasRenderingContext2D) =
         ctx.canvas.width <- ctx.canvas.offsetWidth
         ctx.canvas.height <- ctx.canvas.offsetHeight
@@ -42,3 +47,20 @@ module Drawing =
         ctx.stroke()
         ctx.closePath()
         ctx
+     
+    let drawBezier (b: QuadraticBezierType)  = 
+        drawPointsOnCanvas (bezierPoints b) >> 
+        drawControlPoint b.Control1 >>
+        drawControlPoint b.Control2 >>
+        drawControlPoint b.Control3
+    
+
+    let drawShape (s: Shape) =
+        let drawCircle circle ctx = ctx
+        match s with 
+        | QuadraticBezier(bezier) -> drawBezier bezier
+        | Circle(circle) -> drawCircle circle
+     
+    let drawShapes (ss: Shape list) (ctx: Browser.Types.CanvasRenderingContext2D) :Browser.Types.CanvasRenderingContext2D =
+        let doThing ss = drawShape <| List.head ss
+        doThing ss ctx

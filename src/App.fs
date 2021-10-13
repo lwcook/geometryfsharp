@@ -15,7 +15,6 @@ open Browser.Types
 
 open Fulma  // More nice web components, Columns etc.
 
-open Geometry
 open Drawing
 
 open Update
@@ -28,10 +27,6 @@ let toClientXY (e: MouseEvent) :float * float =
   let r = containerE1.getBoundingClientRect ()
   (e.clientX - r.left, e.clientY - r.top)
 
-let bezierPoints (bezier: QuadraticBezierType) =
-  let flip f a b = f b a
-  (flip List.map [0. .. 0.01 .. 1.01] <| QuadraticBezier.alongCurve bezier)
-
 // VIEW (rendered with React)
 let view (model:Model) dispatch =
 
@@ -39,7 +34,6 @@ let view (model:Model) dispatch =
     let x, y = coords
     String.concat ", " [string x; string y]
 
-  let bezierpoints = bezierPoints model.Bezier
   let canvas = drawingcanvas { 
               Props = [ 
                 OnMouseMove( fun e -> toClientXY (e) |> MouseMove |> dispatch )
@@ -47,10 +41,7 @@ let view (model:Model) dispatch =
                 Style [Width "500px"; Height "500px"]
                 ] ; 
               Redraw =  Drawing.redrawCanvas >>
-                        Drawing.drawPointsOnCanvas bezierpoints >> 
-                        Drawing.drawControlPoint model.Bezier.Control1 >>
-                        Drawing.drawControlPoint model.Bezier.Control2 >>
-                        Drawing.drawControlPoint model.Bezier.Control3 >>
+                        Drawing.drawShapes model.Shapes >>
                         fun _ -> () 
                         |> DrawFunction
             }
