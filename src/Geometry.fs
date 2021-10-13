@@ -39,3 +39,12 @@ module QuadraticBezier =
     
     let listControlPoints (b: QuadraticBezierType) =  
       [b.Control1; b.Control2; b.Control3]
+
+
+type CircleType = {Radius: float; Centre: Point2dType}
+
+module Circle = 
+
+    let alongCurve (c: CircleType) (t: float) :Point2dType =
+        let (x0, y0) = c.Centre
+        (x0 + System.Math.Cos (2. * System.Math.PI * t), y0 + System.Math.Sin (2. * System.Math.PI * t))
