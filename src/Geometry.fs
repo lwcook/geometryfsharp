@@ -22,6 +22,11 @@ module Point2d =
         (a*x1, a*y1)
 
     let rint (x: float): int = int <| System.Math.Round x
+
+    let distance (p: Point2dType) (q: Point2dType) : float =
+        let (x1, y1) = p
+        let (x2, y2) = q
+        sqrt <| (x2 - x1)**2. + (y2 - y1)**2.
    
 type QuadraticBezierType = {Control1: Point2dType; Control2: Point2dType; Control3: Point2dType}
 
@@ -31,3 +36,6 @@ module QuadraticBezier =
         b.Control2 |> 
         Point2d.add2 (Point2d.mult2 ((1. - t)*(1. - t)) (Point2d.sub2 b.Control1 b.Control2)) |> 
         Point2d.add2 (Point2d.mult2 (t * t) (Point2d.sub2 b.Control3 b.Control2))
+    
+    let listControlPoints (b: QuadraticBezierType) =  
+      [b.Control1; b.Control2; b.Control3]
