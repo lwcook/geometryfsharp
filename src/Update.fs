@@ -2,6 +2,8 @@ namespace Update
 
 open Geometry
 
+open FSharp.Stats
+
 type InteractionMode =
     | Hovering
     | EditingShape
@@ -26,15 +28,56 @@ type Msg =
 
 module Update = 
 
+    let radiusDistribution = Distributions.Continuous.normal 50. 5.0 
+    // let xDistribution = Distributions.Continuous.normal 100. 5.0 
+    // let yDistribution = Distributions.Continuous.normal 100. 5.0 
+    let defaultCircle = Circle({Radius=20.; Centre=(100., 100.)})
+
+    let sampleCircles a b c : Shape list = 
+        [defaultCircle]
+        // let (rmu, rstd) = match a with 
+                        //   | Some r -> (r, 0.0)
+                        //   | None -> (50.0, 3.0)
+        // let (xmu, xstd) = match b with 
+                        //   | Some x -> (x, 0.0)
+                        //   | None -> (100.0, 5.0)
+        // let (ymu, ystd) = match c with 
+                        //   | Some y -> (y, 0.0)
+                        //   | None -> (100.0, 5.0)
+        // let mean = vector [rmu; xmu; ymu]
+        // let covar = matrix [[rstd;0.;0.];[0.;xstd;0.;0.;0.;ystd]]
+        // let dist3d = Distributions.Continuous.multivariateNormal  mean covar
+        // let samples = Array.init 20 (fun _ -> dist3d.Sample()) |> Array.toList
+        // let toCircle (sample: vector) = 
+            // Circle({Radius=sample.[0]; Centre=(sample.[1], sample.[2])})
+        // List.map toCircle samples
+
+    let circlesFromText (txt: string) : Shape list =
+        let args = txt.Split(' ') |> Array.toList
+
+        let parseChar c = 
+            try
+                Some <| float c
+            with 
+            | _ -> None
+
+        match args with 
+        | x :: tail ->  match tail with
+                        | [a; b; c] -> sampleCircles (parseChar a) (parseChar b) (parseChar c)
+                        | _ -> [defaultCircle]
+        | _ -> [defaultCircle]
+        // TODO: Could be one, or many samples
+
+
     let shapesFromText (t: string) : Shape list =
         let splitString = t.Split('\n') |> Array.toList
         let readShapeFromLine (s: string) :Shape list =
             match s with 
-            | txt when txt.StartsWith("Circle") -> [Circle({Radius=20.; Centre=(100., 100.)})]
+            | txt when txt.StartsWith("Circle") -> circlesFromText txt
             | txt when txt.StartsWith("Curve") -> [ QuadraticBezier({Control1=(10., 400.); Control2=(10., 10.); Control3=(410., 10.)}) ]
             | _ -> []
         List.reduce List.append (List.map readShapeFromLine splitString)
-        // split = String.
+
 
     let init() : Model =
         let initialText = "Circle\nCircle"
