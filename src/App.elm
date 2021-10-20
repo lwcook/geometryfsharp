@@ -60,7 +60,7 @@ view model =
                 [ canvas model ]
             ]
         , Html.div []
-            [ Html.text "Above is your geometry possibilities"
+            [ Html.text <| "Total number of shapes: " ++ String.fromInt (List.length model.shapes)
             ]
         ]
 

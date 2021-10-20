@@ -20,11 +20,14 @@ type alias Model =
     , canvasWidth : Int
     }
 
+startingCode : String
+startingCode = "Circle 20 100 100\nRectangle 100 100 150 150\n" 
+
 init : Model
 init =
     { numberString = "3"
-    , code = "Circle 20 100 100\nRectangle 100 100 150 150"
-    , shapes = [myCircleShape, myRectangleShape]
+    , code = startingCode
+    , shapes = Parsing.shapesFromText startingCode
     , canvasHeight = 200
     , canvasWidth = 200
     }
