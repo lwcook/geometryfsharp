@@ -1,0 +1,4 @@
+{
+    "entrypoints": ["./src/Main.elm"]
+}
+
