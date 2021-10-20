@@ -1,0 +1,124 @@
+module Logo exposing (..)
+
+something : Int
+something = 10
+
+-- logo : Model -> Html Msg
+-- logo model =
+    -- let
+        -- p1 =
+            -- Point3d.unitless 1 0 0
+-- 
+        -- p2 =
+            -- Point3d.unitless 1 1 0
+-- 
+        -- p3 =
+            -- Point3d.unitless 0 1 0
+-- 
+        -- p4 =
+            -- Point3d.unitless 0 1 model.height
+-- 
+        -- p5 =
+            -- Point3d.unitless 0 0 model.height
+-- 
+        -- p6 =
+            -- Point3d.unitless 1 0 model.height
+-- 
+        -- p7 =
+            -- Point3d.unitless 1 (1 - model.yOffset) model.height
+-- 
+        -- p8 =
+            -- Point3d.unitless 1 1 (model.height - model.zOffset)
+-- 
+        -- p9 =
+            -- Point3d.unitless (1 - model.xOffset) 1 model.height
+-- 
+        -- eyePoint =
+            -- Point3d.unitless 0.5 0.5 (model.height / 2)
+-- 
+        -- viewFrame =
+            -- Frame3d.atPoint eyePoint
+                -- |> Frame3d.rotateAroundOwn Frame3d.zAxis model.azimuth
+                -- |> Frame3d.rotateAroundOwn Frame3d.yAxis (Quantity.negate model.elevation)
+-- 
+        -- to2d =
+            -- Point3d.projectInto (Frame3d.yzSketchPlane viewFrame)
+-- 
+        -- leftPolygon =
+            -- Polygon2d.singleLoop (List.map to2d [ p1, p2, p8, p7, p6 ])
+-- 
+        -- rightPolygon =
+            -- Polygon2d.singleLoop (List.map to2d [ p2, p3, p4, p9, p8 ])
+-- 
+        -- topPolygon =
+            -- Polygon2d.singleLoop (List.map to2d [ p6, p7, p9, p4, p5 ])
+-- 
+        -- trianglePolygon =
+            -- Polygon2d.singleLoop (List.map to2d [ p7, p8, p9 ])
+-- 
+        -- orange =
+            -- "rgb(240, 173, 0)"
+-- 
+        -- green =
+            -- "rgb(127, 209, 59)"
+-- 
+        -- lightBlue =
+            -- "rgb(96, 181, 204)"
+-- 
+        -- darkBlue =
+            -- "rgb(90, 99, 120)"
+-- 
+        -- mask id polygon =
+            -- let
+                -- attributes =
+                    -- [ Svg.Attributes.fill "white"
+                    -- , Svg.Attributes.stroke "black"
+                    -- , Svg.Attributes.strokeWidth "0.03"
+                    -- ]
+            -- in
+            -- Svg.mask [ Svg.Attributes.id id ]
+                -- [ Svg.polygon2d attributes polygon ]
+-- 
+        -- face color clipPathId polygon =
+            -- let
+                -- attributes =
+                    -- [ Svg.Attributes.fill color
+                    -- , Svg.Attributes.mask ("url(#" ++ clipPathId ++ ")")
+                    -- ]
+            -- in
+            -- Svg.polygon2d attributes polygon
+-- 
+        -- defs =
+            -- Svg.defs []
+                -- [ mask "leftOutline" leftPolygon
+                -- , mask "rightOutline" rightPolygon
+                -- , mask "topOutline" topPolygon
+                -- , mask "triangleOutline" trianglePolygon
+                -- ]
+-- 
+        -- leftFace =
+            -- face orange "leftOutline" leftPolygon
+-- 
+        -- rightFace =
+            -- face lightBlue "rightOutline" rightPolygon
+-- 
+        -- topFace =
+            -- face green "topOutline" topPolygon
+-- 
+        -- triangleFace =
+            -- face darkBlue "triangleOutline" trianglePolygon
+-- 
+        -- elements =
+            -- Svg.g [] [ defs, leftFace, rightFace, topFace, triangleFace ]
+-- 
+        -- topLeftFrame =
+            -- Frame2d.atPoint (Point2d.pixels -250 250)
+                -- |> Frame2d.reverseY
+-- 
+        -- scene =
+            -- Svg.relativeTo topLeftFrame
+                -- (Svg.scaleAbout Point2d.origin 200 elements)
+    -- in
+    -- Svg.svg [ Svg.Attributes.width "500", Svg.Attributes.height "500" ]
+        -- [ scene ]
+-- 
