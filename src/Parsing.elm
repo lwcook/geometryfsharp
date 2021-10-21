@@ -6,6 +6,7 @@ import Circle2d
 import Rectangle2d
 import Point2d
 import Shapes exposing (Shape(..))
+import Stats
 
 circleLineToShape : List String -> Maybe (Shapes.Shape Pixels.Pixels coordinates)
 circleLineToShape args =
