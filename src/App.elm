@@ -17,6 +17,10 @@ import Vector
 import Real
 import Plots
 import Svg
+import Browser.Events
+import Json.Decode
+import Browser.Dom
+import Update exposing (Msg(..))
 
 canvas : Update.Model -> Html.Html msg
 canvas model =
@@ -45,21 +49,45 @@ toPlottableSample sampled =
     in
     List.map toSingle sampled
 
+htmlCoords : (Float, Float) -> Html.Html msg
+htmlCoords (x, y) = 
+        Html.div [] 
+            [ Html.text <| String.fromFloat <| x
+            , Html.text <| ", "
+            , Html.text <| String.fromFloat <| y
+            ]
+
+debugView : a -> Html.Html msg
+debugView thing =
+        Html.div [] [Html.text <| Debug.toString thing]
+
 view : Update.Model -> Html.Html Update.Msg
 view model =
     Html.div []
-        [ Html.div []
+        [ Html.div [ Events.onMouseOver (Update.MouseMove 100 100 )]
             [ Html.textarea
                 [ Html.Attributes.value model.code
                 , Html.Attributes.rows 15
+                , Html.Attributes.id "my-thing"
                 , Html.Attributes.cols 79
                 , Events.onInput (\txt -> Update.UpdateCode txt)
+                , Events.onMouseOver (Update.GetElement <| Browser.Dom.getElement "my-thing")
                 ]
                 []
             ]
-        , Html.div [] [Html.button [Events.onClick Update.Generate] [Html.text "Generate"]]
-        -- , Html.div [] [Html.text <| Debug.toString model.currentSample]
-        , Html.div []
+        , Html.div 
+            [ Html.Attributes.id "other" 
+            , Events.onMouseOver (Update.GetElement <| Browser.Dom.getElement "other")
+            ] [Html.button [Events.onClick Update.Generate] [Html.text "Generate"]]
+        , debugView model.selectedShapes
+        , debugView model.shapes
+        , htmlCoords model.absMousePosition
+        , htmlCoords model.elementPosition
+        , htmlCoords model.relativePosition
+        , Html.div 
+            [ Html.Attributes.id "canvas"
+            , Events.onMouseOver (Update.GetElement <| Browser.Dom.getElement "canvas")
+            ]
             [ Svg.svg
                 [ Html.Attributes.height model.canvasHeight
                 , Html.Attributes.width model.canvasWidth
@@ -71,10 +99,17 @@ view model =
         , Html.div []
             [ Html.text <| "Total number of shapes: " ++ String.fromInt (List.length model.shapes)
             ]
-        , Html.div []
-            [ Plots.viewPlot timeSeries]
+        , Html.div [] [ Plots.viewPlot timeSeries]
         ]
 
+subscriptions : Update.Model -> Sub Update.Msg
+subscriptions model =
+    let 
+        first = (Json.Decode.field "pageX" Json.Decode.float)
+        second = (Json.Decode.field "pageY" Json.Decode.float)
+        decoder = Json.Decode.map2 Update.MouseMove first second
+    in 
+    Sub.batch [Browser.Events.onMouseMove decoder]
 
 main : Program () Update.Model Update.Msg
 main =
@@ -82,7 +117,7 @@ main =
         { init = always ( Update.init, Cmd.none )
         , update = \message model -> Update.update message model
         , view = view
-        , subscriptions = always Sub.none
+        , subscriptions = subscriptions
         }
 
 timeSeries : List ( Float, Float )
