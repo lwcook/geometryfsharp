@@ -15,7 +15,6 @@ import Update
 import Stats
 import Vector
 import Real
-import Debug
 import Plots
 import Svg
 
@@ -61,14 +60,14 @@ view model =
         , Html.div [] [Html.button [Events.onClick Update.Generate] [Html.text "Generate"]]
         -- , Html.div [] [Html.text <| Debug.toString model.currentSample]
         , Html.div []
-            [ Plots.viewScatter <| toPlottableSample model.currentSample]
-        , Html.div []
             [ Svg.svg
                 [ Html.Attributes.height model.canvasHeight
                 , Html.Attributes.width model.canvasWidth
                 ]
                 [ canvas model ]
             ]
+        , Html.div []
+            [ Plots.viewScatter <| toPlottableSample model.currentSample]
         , Html.div []
             [ Html.text <| "Total number of shapes: " ++ String.fromInt (List.length model.shapes)
             ]
