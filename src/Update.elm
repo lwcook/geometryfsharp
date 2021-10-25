@@ -6,10 +6,16 @@ import Pixels exposing (Pixels)
 import Circle2d exposing (Circle2d)
 import Rectangle2d exposing (Rectangle2d)
 import Point2d exposing (Point2d)
+import Random
+import Stats
+import Real
+import Vector
 
 type Msg
     = NumberChange String
     | UpdateCode String
+    | Generated (List (List Float))
+    | Generate
 
 
 type alias Model =
@@ -18,6 +24,8 @@ type alias Model =
     , shapes : List (Shapes.Shape Pixels.Pixels Shapes.Coordinates)
     , canvasHeight : Int
     , canvasWidth : Int
+    , distribution : Stats.TruncatedGaussianDistribution
+    , currentSample : List (List Float)
     }
 
 startingCode : String
@@ -30,16 +38,32 @@ init =
     , shapes = Parsing.shapesFromText startingCode
     , canvasHeight = 200
     , canvasWidth = 200
+    , distribution = Stats.normal2d
+    , currentSample = []
     }
 
+updateSample : Model -> List (List Float) -> Model
+updateSample model listOfSamples =
+    let
+        singleSample sample = Stats.rejectionSampleGaussianTruncated model.distribution (Vector.Vector <| List.map (Real.Real) sample)
+        allSamples = List.map singleSample listOfSamples
+        extractFromReal real = let (Real.Real num) = real in num
+        extractFromVector vec = let (Vector.Vector theList) = vec in List.map extractFromReal theList 
+    in
+    {model | currentSample = List.map extractFromVector allSamples}
+    
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
     case msg of
+        Generate -> 
+            (model, Random.generate Generated (Stats.generatorFromGaussian model.distribution 100))
+        Generated listOfSamples -> 
+            (updateSample model listOfSamples, Cmd.none)
         NumberChange number ->
-            { model | numberString = number }
+            ({ model | numberString = number }, Cmd.none)
         UpdateCode text ->
-            { model | code = text, shapes = Parsing.shapesFromText text}
+            ({ model | code = text, shapes = Parsing.shapesFromText text}, Cmd.none)
 
 
 
