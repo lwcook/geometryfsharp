@@ -9,12 +9,11 @@ import NormalMatrix
 import RowVector
 import Real
 import Random
-import InvertableMatrix exposing (InvertableMatrix)
-import RowVector exposing (RowVector)
-import ColumnVector exposing (ColumnVector)
-import SquareMatrix exposing (SquareMatrix)
-import Matrix exposing (Matrix)
-import NormalMatrix exposing (NormalMatrix)
+import InvertableMatrix 
+import RowVector 
+import SquareMatrix 
+import Matrix 
+import NormalMatrix 
 
 
 type alias RealFloat = Real.Real Float
@@ -96,7 +95,7 @@ vectorGenerator vector bounds numberSamples =
 
 
 rejectionSampleGaussianTruncated : TruncatedGaussianDistribution -> Vector.Vector RealFloat -> Vector.Vector RealFloat 
-rejectionSampleGaussianTruncated dist randomSample =
+rejectionSampleGaussianTruncated _ randomSample =
     let 
         -- TODO: Gaussian sampling with cholesky decomposition?
         -- Rejection sampling is annoying, because we don't know how many samples we need to generate

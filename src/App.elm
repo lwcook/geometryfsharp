@@ -9,9 +9,7 @@ import Browser
 import Geometry.Svg as Svg
 import Html
 import Html.Attributes
-import Html.Events as Events
-import Shapes exposing (Shape(..))
-import Update
+import Html.Events
 import Stats
 import Vector
 import Real
@@ -20,14 +18,302 @@ import Svg
 import Browser.Events
 import Json.Decode
 import Browser.Dom
-import Update exposing (Msg(..))
+import Task
+import Pixels
+import Random
+import Point2d
+import Circle2d
+import Rectangle2d
+import Quantity
+import Svg.Attributes
 
-canvas : Update.Model -> Html.Html msg
+
+-- SHAPES
+
+type Coordinates = Coordinates
+
+-- Is using Coordinates here the right thing to do
+-- The type variable coordinates has to be concrete here. 
+-- I guess it's up to me to decide what this is
+-- It's a phantom type, so it doesn't matter, as long as I use this type everywhere? 
+type Shape units coordinates
+    = Circle (Circle2d.Circle2d units coordinates)
+    | Rectangle (Rectangle2d.Rectangle2d units coordinates)
+
+
+type alias SelectedShape units coordinates = 
+    { shape : Shape units coordinates
+    , selected : Bool
+    , codeLine : Int
+    }
+
+
+extractShapes : List (SelectedShape units coordinates) -> List (Shape units coordinates)
+extractShapes selectedShapes =
+    List.map (\s -> s.shape) selectedShapes
+
+
+onCircleBoundary : Circle2d.Circle2d units coordinates -> Point2d.Point2d units coordinates -> Bool
+onCircleBoundary circle point =
+    let 
+        distFromCenter = Point2d.distanceFrom point (Circle2d.centerPoint circle)
+        tolerance = Quantity.multiplyBy 0.08 (Circle2d.radius circle)
+        difference = Quantity.abs <| Quantity.difference distFromCenter (Circle2d.radius circle) 
+    in Quantity.lessThan tolerance difference
+
+onRectBoundary : Rectangle2d.Rectangle2d units coordinates -> Point2d.Point2d units coordinates -> Bool
+onRectBoundary rect point = False
+
+onShapeBoundary : Shape units coordinates -> Point2d.Point2d units coordinates -> Bool
+onShapeBoundary shape point =
+   case shape of
+       Circle circle -> onCircleBoundary circle point
+       Rectangle rect -> onRectBoundary rect point
+
+
+toCircleSvg : List (Svg.Attribute msg) -> Circle2d.Circle2d Pixels.Pixels coordinates -> Svg.Svg msg
+toCircleSvg attributes =
+    Svg.circle2d <|
+        [ Svg.Attributes.fill "transparent"
+        , Svg.Attributes.strokeWidth "1"
+        ] 
+        ++ attributes
+
+toRectangleSvg : List (Svg.Attribute msg) -> Rectangle2d.Rectangle2d Pixels.Pixels coordinates -> Svg.Svg msg
+toRectangleSvg attributes =
+    Svg.rectangle2d <|
+        [ Svg.Attributes.fill "transparent"
+        , Svg.Attributes.stroke "black"
+        , Svg.Attributes.strokeWidth "1"
+        ] 
+        ++ attributes
+
+
+fromShape : SelectedShape Pixels.Pixels coordinates -> Svg.Svg msg
+fromShape selectedShape =
+    let 
+        {shape, selected} = selectedShape
+        stroke = case selected of 
+            True -> "Red" 
+            False -> "Black"
+        attributes = [ Svg.Attributes.stroke stroke ]
+    in
+    case shape of
+        Circle circle ->
+            toCircleSvg attributes circle
+
+        Rectangle rect ->
+            toRectangleSvg attributes rect
+
+-- PARSING
+
+circleLineToShape : List String -> Maybe (Shape Pixels.Pixels coordinates)
+circleLineToShape args =
+    case args of 
+        [_,rs,xs,ys] ->
+            let 
+                r = Maybe.withDefault 100.0 (String.toFloat rs)
+                x = Maybe.withDefault 100.0 (String.toFloat xs)
+                y = Maybe.withDefault 100.0 (String.toFloat ys)
+            in
+                Just <| Circle (Circle2d.withRadius (Pixels.float r) (Point2d.fromTuple Pixels.float (x, y)))
+        _ -> Nothing
+
+rectLineToShape : List String -> Maybe (Shape Pixels.Pixels coordinates)
+rectLineToShape args =
+    case args of 
+        [_, x1s, y1s, x2s, y2s] ->
+            let 
+                x1 = Maybe.withDefault 100.0 (String.toFloat x1s)
+                y1 = Maybe.withDefault 100.0 (String.toFloat y1s)
+                x2 = Maybe.withDefault 100.0 (String.toFloat x2s)
+                y2 = Maybe.withDefault 100.0 (String.toFloat y2s)
+                record = {
+                    x1 = Pixels.pixels x1,
+                    x2 = Pixels.pixels x2,
+                    y1 = Pixels.pixels y1,
+                    y2 = Pixels.pixels y2
+                    }
+            in
+                Just <| Rectangle (Rectangle2d.with record)
+        _ -> Nothing
+
+lineToShape : String -> Maybe (Shape Pixels.Pixels coordinates)
+lineToShape text = 
+    let 
+        args = String.split " " text 
+        first = List.head args
+    in
+    case first of 
+        Nothing -> Nothing
+        Just elem -> 
+            case elem of
+                "Circle" -> circleLineToShape args
+                "Rectangle" -> rectLineToShape args
+                _ -> Nothing
+
+shapesFromText : String -> List (SelectedShape Pixels.Pixels coordinates)
+shapesFromText txt = 
+    let
+        lines = String.split "\n" txt
+        enumeratedLines = List.indexedMap (\index line -> (index, line)) lines
+        listify : (Int, Maybe (Shape units coordinates)) -> List (SelectedShape units coordinates)
+        listify (index, maybeShape) =
+            case maybeShape of
+               Nothing -> []
+               Just shape -> [(SelectedShape shape False index)]
+
+    in 
+    List.concatMap (listify << (\(index, line) -> (index, lineToShape line))) enumeratedLines  
+
+
+-- MESSAGES AND MODELS
+
+type Msg
+    = NumberChange String
+    | UpdateCode String
+    | Generated (List (List Float))
+    | Generate
+    | MouseMove Float Float
+    | GetElement (Task.Task Browser.Dom.Error Browser.Dom.Element)
+    | GotElement Browser.Dom.Element
+    | StayTheSame
+
+
+type alias Model =
+    { numberString : String
+    , code : String
+    , shapes : List (SelectedShape Pixels.Pixels Coordinates)
+    , canvasHeight : Int
+    , canvasWidth : Int
+    , distribution : Stats.TruncatedGaussianDistribution
+    , currentSample : List (List Float)
+    , absMousePosition : (Float, Float)
+    , elementPosition : (Float, Float)
+    , relativePosition : (Float, Float)
+    }
+
+startingCode : String
+startingCode = "Circle 20 100 100\nRectangle 100 100 150 150\n" 
+
+updateSelectedShapes : List Bool -> List (SelectedShape units coordinates) -> List (SelectedShape units coordinates)
+updateSelectedShapes toSelect shapes = 
+    List.map2 (\isSelected ({shape, selected, codeLine}) -> SelectedShape shape isSelected codeLine) toSelect shapes
+
+init : Model
+init =
+    { numberString = "3"
+    , code = startingCode
+    , shapes = shapesFromText startingCode
+    , canvasHeight = 200
+    , canvasWidth = 200
+    , distribution = Stats.normal2d
+    , currentSample = []
+    , absMousePosition = (0, 0)
+    , elementPosition = (0, 0)
+    , relativePosition = (0, 0)
+    }
+
+updateSample : Model -> List (List Float) -> Model
+updateSample model listOfSamples =
+    let
+        singleSample sample = Stats.rejectionSampleGaussianTruncated model.distribution (Vector.Vector <| List.map (Real.Real) sample)
+        allSamples = List.map singleSample listOfSamples
+        extractFromReal real = let (Real.Real num) = real in num
+        extractFromVector vec = let (Vector.Vector theList) = vec in List.map extractFromReal theList 
+    in
+    {model | currentSample = List.map extractFromVector allSamples}
+    
+
+cmdFromGetElement : Task.Task Browser.Dom.Error Browser.Dom.Element -> Cmd Msg
+cmdFromGetElement task = 
+    let 
+        resToMsg res = 
+            case res of 
+                Ok elem -> GotElement elem
+                Err _ -> StayTheSame
+
+    in Task.attempt resToMsg task
+
+updateModelWithElement : Browser.Dom.Element -> Model -> Model
+updateModelWithElement elem model = 
+    let (absX, absY) = model.absMousePosition
+    in 
+    { model 
+    | elementPosition = (elem.element.x, elem.element.y) 
+    , relativePosition = (absX - elem.element.x, absY - elem.element.y)
+    }
+
+updateOnMouseMove : Float -> Float -> Model -> Model
+updateOnMouseMove x y model = 
+    let 
+        (elemX, elemY) = model.elementPosition
+        relPos = (x - elemX, y - elemY)
+        first = 
+            { model 
+            | absMousePosition = (x, y)
+            , relativePosition = relPos
+            }
+    in 
+    selectShapes relPos first
+
+selectShapes : (Float, Float) -> Model -> Model
+selectShapes (relX, relY) model =
+    let 
+        select : Shape Pixels.Pixels coordinates -> Bool
+        select shape = 
+            case shape of 
+                Rectangle rect -> onRectBoundary rect (Point2d.fromPixels {x=relX, y=relY})
+                Circle circle -> onCircleBoundary circle (Point2d.fromPixels {x=relX, y=relY})
+
+        nextSelected = List.map select <| extractShapes model.shapes
+    in
+    { model | shapes = updateSelectedShapes nextSelected model.shapes }
+
+update : Msg -> Model -> (Model, Cmd Msg)
+update msg model =
+    case msg of
+        Generate -> 
+            (model, Random.generate Generated (Stats.generatorFromGaussian model.distribution 100))
+        Generated listOfSamples -> 
+            (updateSample model listOfSamples, Cmd.none)
+        NumberChange number ->
+            ({ model | numberString = number }, Cmd.none)
+        UpdateCode text ->
+            ({ model | code = text, shapes = shapesFromText text}, Cmd.none)
+        MouseMove x y -> (updateOnMouseMove x y model, Cmd.none)
+        GetElement task -> (model, cmdFromGetElement task)
+        GotElement elem -> (updateModelWithElement elem model, Cmd.none)
+        StayTheSame -> (model, Cmd.none)
+
+
+-- INITIALISATION AND VIEWING
+
+myCircleShape : Shape Pixels.Pixels coordinates
+myCircleShape =
+    let 
+        myCircle = Circle2d.withRadius (Pixels.float 10) (Point2d.fromTuple Pixels.float ( 150, 150 ))
+    in
+    Circle myCircle
+
+myRectangleShape : Shape Pixels.Pixels coordinates
+myRectangleShape =
+    let
+        record = {
+            x1 = Pixels.pixels 150.0,
+            x2 = Pixels.pixels 200.0,
+            y1 = Pixels.pixels 150.0,
+            y2 = Pixels.pixels 200.0
+            }
+    in
+    Rectangle <| Rectangle2d.with record
+
+
+canvas : Model -> Html.Html msg
 canvas model =
     let
         -- topLeftFrame = Frame2d.atPoint (Point2d.pixels 100 100)
-
-        elements = Svg.g [] (List.map Shapes.fromShape model.shapes)
+        elements = Svg.g [ ] (List.map fromShape <| model.shapes)
 
         -- scene = Svg.relativeTo topLeftFrame elements
         scene = elements
@@ -61,32 +347,31 @@ debugView : a -> Html.Html msg
 debugView thing =
         Html.div [] [Html.text <| Debug.toString thing]
 
-view : Update.Model -> Html.Html Update.Msg
+view : Model -> Html.Html Msg
 view model =
     Html.div []
-        [ Html.div [ Events.onMouseOver (Update.MouseMove 100 100 )]
+        [ Html.div [ Html.Events.onMouseOver (MouseMove 100 100 )]
             [ Html.textarea
                 [ Html.Attributes.value model.code
                 , Html.Attributes.rows 15
                 , Html.Attributes.id "my-thing"
                 , Html.Attributes.cols 79
-                , Events.onInput (\txt -> Update.UpdateCode txt)
-                , Events.onMouseOver (Update.GetElement <| Browser.Dom.getElement "my-thing")
+                , Html.Events.onInput (\txt -> UpdateCode txt)
+                , Html.Events.onMouseOver (GetElement <| Browser.Dom.getElement "my-thing")
                 ]
                 []
             ]
         , Html.div 
             [ Html.Attributes.id "other" 
-            , Events.onMouseOver (Update.GetElement <| Browser.Dom.getElement "other")
-            ] [Html.button [Events.onClick Update.Generate] [Html.text "Generate"]]
-        , debugView model.selectedShapes
+            , Html.Events.onMouseOver (GetElement <| Browser.Dom.getElement "other")
+            ] [Html.button [Html.Events.onClick Generate] [Html.text "Generate"]]
         , debugView model.shapes
         , htmlCoords model.absMousePosition
         , htmlCoords model.elementPosition
         , htmlCoords model.relativePosition
         , Html.div 
             [ Html.Attributes.id "canvas"
-            , Events.onMouseOver (Update.GetElement <| Browser.Dom.getElement "canvas")
+            , Html.Events.onMouseOver (GetElement <| Browser.Dom.getElement "canvas")
             ]
             [ Svg.svg
                 [ Html.Attributes.height model.canvasHeight
@@ -102,20 +387,20 @@ view model =
         , Html.div [] [ Plots.viewPlot timeSeries]
         ]
 
-subscriptions : Update.Model -> Sub Update.Msg
-subscriptions model =
+subscriptions : Model -> Sub Msg
+subscriptions _ =
     let 
         first = (Json.Decode.field "pageX" Json.Decode.float)
         second = (Json.Decode.field "pageY" Json.Decode.float)
-        decoder = Json.Decode.map2 Update.MouseMove first second
+        decoder = Json.Decode.map2 MouseMove first second
     in 
     Sub.batch [Browser.Events.onMouseMove decoder]
 
-main : Program () Update.Model Update.Msg
+main : Program () Model Msg
 main =
     Browser.element
-        { init = always ( Update.init, Cmd.none )
-        , update = \message model -> Update.update message model
+        { init = always ( init, Cmd.none )
+        , update = \message model -> update message model
         , view = view
         , subscriptions = subscriptions
         }

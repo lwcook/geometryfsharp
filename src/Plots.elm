@@ -8,8 +8,8 @@ import Axis
 import Scale
 import Shape
 import TypedSvg.Core
-import TypedSvg.Types exposing (AnchorAlignment(..), CoordinateSystem(..), Length(..), Opacity(..), Paint(..), Transform(..), px)
-import TypedSvg exposing (circle, defs, g, linearGradient, stop, svg)
+import TypedSvg.Types exposing (AnchorAlignment(..), CoordinateSystem(..), Length(..), Opacity(..), Paint(..), Transform(..))
+import TypedSvg exposing (circle, defs, g, linearGradient, stop)
 import TypedSvg.Attributes exposing (class, fill, id, offset, opacity, stopColor, stroke, transform, viewBox)
 import TypedSvg.Attributes.InPx exposing (cx, cy, r, strokeWidth)
 import Svg
