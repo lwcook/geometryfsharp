@@ -26,6 +26,8 @@ import Circle2d
 import Rectangle2d
 import Quantity
 import Svg.Attributes
+import Rectangle2d exposing (Rectangle2d)
+import Frame2d
 
 
 -- SHAPES
@@ -52,6 +54,34 @@ extractShapes : List (SelectedShape units coordinates) -> List (Shape units coor
 extractShapes selectedShapes =
     List.map (\s -> s.shape) selectedShapes
 
+onRectBoundary : Rectangle2d.Rectangle2d units coordinates -> Point2d.Point2d units coordinates -> Bool
+onRectBoundary rect point = 
+    let
+        frame = Rectangle2d.axes rect
+        xLength = Quantity.multiplyBy 0.5 <| Tuple.first <| Rectangle2d.dimensions rect
+        yLength = Quantity.multiplyBy 0.5 <| Tuple.second <| Rectangle2d.dimensions rect
+        pointInFrame = Point2d.relativeTo frame point
+        tolerance = Quantity.multiplyBy 0.08 xLength
+        inXBounds = Quantity.lessThan (Quantity.multiplyBy 1.08 xLength) (Quantity.abs <| Point2d.xCoordinate pointInFrame)
+        inYBounds = Quantity.lessThan (Quantity.multiplyBy 1.08 yLength) (Quantity.abs <| Point2d.yCoordinate pointInFrame)
+
+        axisDistance axisCoord axisLength = 
+            let
+                xDist1 = Quantity.abs <| Quantity.minus axisCoord axisLength
+                xDist2 = Quantity.abs <| Quantity.minus axisCoord (Quantity.negate axisLength)
+            in 
+            Quantity.min xDist1 xDist2
+        
+        xDist = axisDistance (Point2d.xCoordinate pointInFrame) xLength
+        yDist = axisDistance (Point2d.yCoordinate pointInFrame) yLength
+
+    in
+        if Quantity.lessThan tolerance xDist && inYBounds
+        then True
+        else if
+            Quantity.lessThan tolerance yDist && inXBounds
+            then True
+            else False
 
 onCircleBoundary : Circle2d.Circle2d units coordinates -> Point2d.Point2d units coordinates -> Bool
 onCircleBoundary circle point =
@@ -60,9 +90,6 @@ onCircleBoundary circle point =
         tolerance = Quantity.multiplyBy 0.08 (Circle2d.radius circle)
         difference = Quantity.abs <| Quantity.difference distFromCenter (Circle2d.radius circle) 
     in Quantity.lessThan tolerance difference
-
-onRectBoundary : Rectangle2d.Rectangle2d units coordinates -> Point2d.Point2d units coordinates -> Bool
-onRectBoundary rect point = False
 
 onShapeBoundary : Shape units coordinates -> Point2d.Point2d units coordinates -> Bool
 onShapeBoundary shape point =
@@ -260,12 +287,8 @@ updateOnMouseMove x y model =
 selectShapes : (Float, Float) -> Model -> Model
 selectShapes (relX, relY) model =
     let 
-        select : Shape Pixels.Pixels coordinates -> Bool
-        select shape = 
-            case shape of 
-                Rectangle rect -> onRectBoundary rect (Point2d.fromPixels {x=relX, y=relY})
-                Circle circle -> onCircleBoundary circle (Point2d.fromPixels {x=relX, y=relY})
-
+        point = (Point2d.fromPixels {x=relX, y=relY})
+        select shape = onShapeBoundary shape point
         nextSelected = List.map select <| extractShapes model.shapes
     in
     { model | shapes = updateSelectedShapes nextSelected model.shapes }
