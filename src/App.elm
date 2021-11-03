@@ -120,9 +120,7 @@ fromShape : SelectedShape Pixels.Pixels coordinates -> Svg.Svg msg
 fromShape selectedShape =
     let 
         {shape, selected} = selectedShape
-        stroke = case selected of 
-            True -> "Red" 
-            False -> "Black"
+        stroke = if selected then "Red" else "Black"
         attributes = [ Svg.Attributes.stroke stroke ]
     in
     case shape of
@@ -281,8 +279,28 @@ updateOnMouseMove x y model =
             | absMousePosition = (x, y)
             , relativePosition = relPos
             }
+        selectedShapeModel = selectShapes relPos first
     in 
-    selectShapes relPos first
+    updateTextWithSelected selectedShapeModel 
+
+
+updateTextWithSelected : Model -> Model
+updateTextWithSelected model =
+    let
+        currentText = model.code
+        lines = String.split "\n" currentText
+        selectedLines = List.filterMap (\s -> if s.selected then Just s.codeLine else Nothing) model.shapes 
+        updateLine i l =
+            if List.member i selectedLines 
+            then 
+                if String.endsWith "<-" l then l else (l ++ " <-") 
+            else 
+                if String.endsWith " <-" l then String.dropRight 3 l else l
+        updatedLines = List.indexedMap (\index line -> updateLine index line) lines
+        newText = String.join "\n" updatedLines
+    in
+    { model | code = newText }
+    
 
 selectShapes : (Float, Float) -> Model -> Model
 selectShapes (relX, relY) model =
