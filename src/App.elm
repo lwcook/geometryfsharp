@@ -47,6 +47,7 @@ type alias SelectedShape units coordinates =
     { shape : Shape units coordinates
     , selected : Bool
     , codeLine : Int
+    , code : String
     }
 
 
@@ -163,18 +164,19 @@ rectLineToShape args =
                 Just <| Rectangle (Rectangle2d.with record)
         _ -> Nothing
 
-lineToShape : String -> Maybe (Shape Pixels.Pixels coordinates)
-lineToShape text = 
+lineToShape : String -> Int -> Maybe (SelectedShape Pixels.Pixels coordinates)
+lineToShape text lineIndex = 
     let 
         args = String.split " " text 
         first = List.head args
+        toSelected shape = SelectedShape shape False lineIndex text
     in
     case first of 
         Nothing -> Nothing
         Just elem -> 
             case elem of
-                "Circle" -> circleLineToShape args
-                "Rectangle" -> rectLineToShape args
+                "Circle" -> Maybe.map toSelected (circleLineToShape args)
+                "Rectangle" -> Maybe.map toSelected (rectLineToShape args)
                 _ -> Nothing
 
 shapesFromText : String -> List (SelectedShape Pixels.Pixels coordinates)
@@ -182,14 +184,14 @@ shapesFromText txt =
     let
         lines = String.split "\n" txt
         enumeratedLines = List.indexedMap (\index line -> (index, line)) lines
-        listify : (Int, Maybe (Shape units coordinates)) -> List (SelectedShape units coordinates)
-        listify (index, maybeShape) =
+        listify : Maybe (SelectedShape units coordinates) -> List (SelectedShape units coordinates)
+        listify maybeShape =
             case maybeShape of
                Nothing -> []
-               Just shape -> [(SelectedShape shape False index)]
+               Just shape -> [shape]
 
     in 
-    List.concatMap (listify << (\(index, line) -> (index, lineToShape line))) enumeratedLines  
+    List.concatMap (listify << (\(index, line) -> lineToShape line index)) enumeratedLines  
 
 
 -- MESSAGES AND MODELS
@@ -223,7 +225,7 @@ startingCode = "Circle 20 100 100\nRectangle 100 100 150 150\n"
 
 updateSelectedShapes : List Bool -> List (SelectedShape units coordinates) -> List (SelectedShape units coordinates)
 updateSelectedShapes toSelect shapes = 
-    List.map2 (\isSelected ({shape, selected, codeLine}) -> SelectedShape shape isSelected codeLine) toSelect shapes
+    List.map2 (\isSelected ({shape, selected, codeLine, code}) -> SelectedShape shape isSelected codeLine code) toSelect shapes
 
 init : Model
 init =
