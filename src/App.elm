@@ -48,6 +48,7 @@ type alias SelectedShape units coordinates =
     , selected : Bool
     , codeLine : Int
     , code : String
+    , uncertainty : List (Shape units coordinates)
     }
 
 
@@ -117,19 +118,21 @@ toRectangleSvg attributes =
         ++ attributes
 
 
-fromShape : SelectedShape Pixels.Pixels coordinates -> Svg.Svg msg
+fromShape : SelectedShape Pixels.Pixels coordinates -> List (Svg.Svg msg)
 fromShape selectedShape =
     let 
         {shape, selected} = selectedShape
         stroke = if selected then "Red" else "Black"
         attributes = [ Svg.Attributes.stroke stroke ]
+        uncertainAttributes = [ Svg.Attributes.stroke "Grey"]
+        -- TODO: Make the uncertain shapes visible on screen
     in
     case shape of
         Circle circle ->
-            toCircleSvg attributes circle
+            [toCircleSvg attributes circle]
 
         Rectangle rect ->
-            toRectangleSvg attributes rect
+            [toRectangleSvg attributes rect]
 
 -- PARSING
 
@@ -164,12 +167,12 @@ rectLineToShape args =
                 Just <| Rectangle (Rectangle2d.with record)
         _ -> Nothing
 
-lineToShape : String -> Int -> Maybe (SelectedShape Pixels.Pixels coordinates)
-lineToShape text lineIndex = 
+lineToBaseShape : String -> Int -> Maybe (SelectedShape Pixels.Pixels coordinates)
+lineToBaseShape text lineIndex = 
     let 
         args = String.split " " text 
         first = List.head args
-        toSelected shape = SelectedShape shape False lineIndex text
+        toSelected shape = SelectedShape shape False lineIndex text []
     in
     case first of 
         Nothing -> Nothing
@@ -178,6 +181,39 @@ lineToShape text lineIndex =
                 "Circle" -> Maybe.map toSelected (circleLineToShape args)
                 "Rectangle" -> Maybe.map toSelected (rectLineToShape args)
                 _ -> Nothing
+
+uncertainRectangle : Rectangle2d.Rectangle2d units coordinates -> List (Rectangle2d.Rectangle2d units coordinates)
+uncertainRectangle rect =
+    [rect]
+
+uncertainCircle : Circle2d.Circle2d units coordinates -> List (Circle2d.Circle2d units coordinates)
+uncertainCircle circ =
+    let
+        r0 = Circle2d.radius circ
+        newR = [Quantity.multiplyBy 0.9 r0, Quantity.multiplyBy 0.9 r0, r0]
+    in 
+    List.map (\r -> Circle2d.withRadius r (Circle2d.centerPoint circ)) newR
+    
+
+updateShapeWithUncertainty : SelectedShape units coordinates -> Maybe (SelectedShape units coordinates)
+updateShapeWithUncertainty start = 
+    let
+        new = case start.shape of 
+                Rectangle rect -> { start | uncertainty = List.map Rectangle (uncertainRectangle rect)}
+                Circle circ -> { start | uncertainty = List.map Circle (uncertainCircle circ) }
+    in
+    Just new
+    
+
+nextStep : SelectedShape units coordinates -> Maybe (SelectedShape units coordinates)
+nextStep shape = Just shape
+
+lineToShape : String -> Int -> Maybe (SelectedShape Pixels.Pixels coordinates)
+lineToShape line lineIndex = 
+    lineToBaseShape line lineIndex
+    |> Maybe.andThen updateShapeWithUncertainty
+    |> Maybe.andThen nextStep
+
 
 shapesFromText : String -> List (SelectedShape Pixels.Pixels coordinates)
 shapesFromText txt = 
@@ -192,6 +228,12 @@ shapesFromText txt =
 
     in 
     List.concatMap (listify << (\(index, line) -> lineToShape line index)) enumeratedLines  
+    |> combineShapes
+
+
+-- Representing some next step
+combineShapes : List (SelectedShape units coordinates) -> List (SelectedShape units coordinates)
+combineShapes shapes = shapes
 
 
 -- MESSAGES AND MODELS
@@ -205,7 +247,6 @@ type Msg
     | GetElement (Task.Task Browser.Dom.Error Browser.Dom.Element)
     | GotElement Browser.Dom.Element
     | StayTheSame
-
 
 type alias Model =
     { numberString : String
@@ -225,7 +266,9 @@ startingCode = "Circle 20 100 100\nRectangle 100 100 150 150\n"
 
 updateSelectedShapes : List Bool -> List (SelectedShape units coordinates) -> List (SelectedShape units coordinates)
 updateSelectedShapes toSelect shapes = 
-    List.map2 (\isSelected ({shape, selected, codeLine, code}) -> SelectedShape shape isSelected codeLine code) toSelect shapes
+    let updatedSelected isSelected current = { current | selected = isSelected}
+    in
+    List.map2 updatedSelected toSelect shapes
 
 init : Model
 init =
@@ -356,7 +399,7 @@ canvas : Model -> Html.Html msg
 canvas model =
     let
         -- topLeftFrame = Frame2d.atPoint (Point2d.pixels 100 100)
-        elements = Svg.g [ ] (List.map fromShape <| model.shapes)
+        elements = Svg.g [ ] (List.concatMap fromShape <| model.shapes)
 
         -- scene = Svg.relativeTo topLeftFrame elements
         scene = elements
