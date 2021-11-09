@@ -5,3 +5,7 @@ node_modules
 **.elmi
 **.elmo
 */elm-stuff/*
+**/**/.elmi
+**/**/.elmo
+.elmi
+.elmo

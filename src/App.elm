@@ -13,6 +13,7 @@ import Html.Events
 import Stats
 import Vector
 import Real
+import Angle
 import Plots
 import Svg
 import Browser.Events
@@ -100,7 +101,7 @@ onShapeBoundary shape point =
        Rectangle rect -> onRectBoundary rect point
 
 
-toCircleSvg : List (Svg.Attribute msg) -> Circle2d.Circle2d Pixels.Pixels coordinates -> Svg.Svg msg
+toCircleSvg : List (Svg.Attribute msg) -> Circle2d.Circle2d units coordinates -> Svg.Svg msg
 toCircleSvg attributes =
     Svg.circle2d <|
         [ Svg.Attributes.fill "transparent"
@@ -108,7 +109,7 @@ toCircleSvg attributes =
         ] 
         ++ attributes
 
-toRectangleSvg : List (Svg.Attribute msg) -> Rectangle2d.Rectangle2d Pixels.Pixels coordinates -> Svg.Svg msg
+toRectangleSvg : List (Svg.Attribute msg) -> Rectangle2d.Rectangle2d units coordinates -> Svg.Svg msg
 toRectangleSvg attributes =
     Svg.rectangle2d <|
         [ Svg.Attributes.fill "transparent"
@@ -117,9 +118,18 @@ toRectangleSvg attributes =
         ] 
         ++ attributes
 
+fromIndividualShape : List (Svg.Attribute msg) -> Shape units coordinates -> Svg.Svg msg
+fromIndividualShape attributes shape =
+    case shape of
+        Circle circle ->
+            toCircleSvg attributes circle
 
-fromShape : SelectedShape Pixels.Pixels coordinates -> List (Svg.Svg msg)
-fromShape selectedShape =
+        Rectangle rect ->
+            toRectangleSvg attributes rect
+    
+
+svgFromShapeData : SelectedShape units coordinates -> List (Svg.Svg msg)
+svgFromShapeData selectedShape =
     let 
         {shape, selected} = selectedShape
         stroke = if selected then "Red" else "Black"
@@ -127,12 +137,7 @@ fromShape selectedShape =
         uncertainAttributes = [ Svg.Attributes.stroke "Grey"]
         -- TODO: Make the uncertain shapes visible on screen
     in
-    case shape of
-        Circle circle ->
-            [toCircleSvg attributes circle]
-
-        Rectangle rect ->
-            [toRectangleSvg attributes rect]
+    [fromIndividualShape attributes shape] ++ (List.map (fromIndividualShape uncertainAttributes) selectedShape.uncertainty)
 
 -- PARSING
 
@@ -184,13 +189,24 @@ lineToBaseShape text lineIndex =
 
 uncertainRectangle : Rectangle2d.Rectangle2d units coordinates -> List (Rectangle2d.Rectangle2d units coordinates)
 uncertainRectangle rect =
-    [rect]
+    let
+         (l0, h0) = Rectangle2d.dimensions rect 
+         angle = Angle.degrees 0
+         newD dims = Rectangle2d.withDimensions dims angle (Rectangle2d.centerPoint rect)
+    in
+    List.map newD 
+        [ (Quantity.multiplyBy 0.9 l0, h0)
+        , (Quantity.multiplyBy 1.1 l0, h0)
+        , (l0, Quantity.multiplyBy 0.9 h0)
+        , (l0, Quantity.multiplyBy 1.1 h0)
+        ]
 
 uncertainCircle : Circle2d.Circle2d units coordinates -> List (Circle2d.Circle2d units coordinates)
 uncertainCircle circ =
     let
         r0 = Circle2d.radius circ
-        newR = [Quantity.multiplyBy 0.9 r0, Quantity.multiplyBy 0.9 r0, r0]
+        -- TODO: Sample some distribution for these, don't hard code
+        newR = [Quantity.multiplyBy 1.1 r0, Quantity.multiplyBy 0.9 r0]
     in 
     List.map (\r -> Circle2d.withRadius r (Circle2d.centerPoint circ)) newR
     
@@ -399,7 +415,7 @@ canvas : Model -> Html.Html msg
 canvas model =
     let
         -- topLeftFrame = Frame2d.atPoint (Point2d.pixels 100 100)
-        elements = Svg.g [ ] (List.concatMap fromShape <| model.shapes)
+        elements = Svg.g [ ] (List.concatMap svgFromShapeData <| model.shapes)
 
         -- scene = Svg.relativeTo topLeftFrame elements
         scene = elements
