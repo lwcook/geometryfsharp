@@ -27,33 +27,33 @@ import Circle2d
 import Rectangle2d
 import Quantity
 import Svg.Attributes
-import Rectangle2d exposing (Rectangle2d)
-import Frame2d
+import Rectangle2d
 
+swap : (a -> b -> c) -> b -> a -> c
+swap f x y = f y x
 
 -- SHAPES
 
+-- Use one type singleton variable for all coordinates. 
+-- Not doing any global / local shenanigans yet
 type Coordinates = Coordinates
 
--- Is using Coordinates here the right thing to do
--- The type variable coordinates has to be concrete here. 
--- I guess it's up to me to decide what this is
--- It's a phantom type, so it doesn't matter, as long as I use this type everywhere? 
 type Shape units coordinates
     = Circle (Circle2d.Circle2d units coordinates)
     | Rectangle (Rectangle2d.Rectangle2d units coordinates)
 
 
-type alias SelectedShape units coordinates = 
+type alias ShapeModel units coordinates = 
     { shape : Shape units coordinates
-    , selected : Bool
+    , hovered : Bool
     , codeLine : Int
     , code : String
     , uncertainty : List (Shape units coordinates)
+    , selected : Bool
     }
 
 
-extractShapes : List (SelectedShape units coordinates) -> List (Shape units coordinates)
+extractShapes : List (ShapeModel units coordinates) -> List (Shape units coordinates)
 extractShapes selectedShapes =
     List.map (\s -> s.shape) selectedShapes
 
@@ -128,11 +128,11 @@ fromIndividualShape attributes shape =
             toRectangleSvg attributes rect
     
 
-svgFromShapeData : SelectedShape units coordinates -> List (Svg.Svg msg)
+svgFromShapeData : ShapeModel units coordinates -> List (Svg.Svg msg)
 svgFromShapeData selectedShape =
     let 
-        {shape, selected} = selectedShape
-        stroke = if selected then "Red" else "Black"
+        {shape, hovered} = selectedShape
+        stroke = if hovered then "Red" else "Black"
         attributes = [ Svg.Attributes.stroke stroke ]
         uncertainAttributes = [ Svg.Attributes.stroke "Grey"]
         -- TODO: Make the uncertain shapes visible on screen
@@ -172,12 +172,12 @@ rectLineToShape args =
                 Just <| Rectangle (Rectangle2d.with record)
         _ -> Nothing
 
-lineToBaseShape : String -> Int -> Maybe (SelectedShape Pixels.Pixels coordinates)
+lineToBaseShape : String -> Int -> Maybe (ShapeModel Pixels.Pixels coordinates)
 lineToBaseShape text lineIndex = 
     let 
         args = String.split " " text 
         first = List.head args
-        toSelected shape = SelectedShape shape False lineIndex text []
+        toSelected shape = ShapeModel shape False lineIndex text [] False
     in
     case first of 
         Nothing -> Nothing
@@ -211,7 +211,7 @@ uncertainCircle circ =
     List.map (\r -> Circle2d.withRadius r (Circle2d.centerPoint circ)) newR
     
 
-updateShapeWithUncertainty : SelectedShape units coordinates -> Maybe (SelectedShape units coordinates)
+updateShapeWithUncertainty : ShapeModel units coordinates -> Maybe (ShapeModel units coordinates)
 updateShapeWithUncertainty start = 
     let
         new = case start.shape of 
@@ -221,22 +221,22 @@ updateShapeWithUncertainty start =
     Just new
     
 
-nextStep : SelectedShape units coordinates -> Maybe (SelectedShape units coordinates)
+nextStep : ShapeModel units coordinates -> Maybe (ShapeModel units coordinates)
 nextStep shape = Just shape
 
-lineToShape : String -> Int -> Maybe (SelectedShape Pixels.Pixels coordinates)
+lineToShape : String -> Int -> Maybe (ShapeModel Pixels.Pixels coordinates)
 lineToShape line lineIndex = 
     lineToBaseShape line lineIndex
     |> Maybe.andThen updateShapeWithUncertainty
     |> Maybe.andThen nextStep
 
 
-shapesFromText : String -> List (SelectedShape Pixels.Pixels coordinates)
+shapesFromText : String -> List (ShapeModel Pixels.Pixels coordinates)
 shapesFromText txt = 
     let
         lines = String.split "\n" txt
         enumeratedLines = List.indexedMap (\index line -> (index, line)) lines
-        listify : Maybe (SelectedShape units coordinates) -> List (SelectedShape units coordinates)
+        listify : Maybe (ShapeModel units coordinates) -> List (ShapeModel units coordinates)
         listify maybeShape =
             case maybeShape of
                Nothing -> []
@@ -248,7 +248,7 @@ shapesFromText txt =
 
 
 -- Representing some next step
-combineShapes : List (SelectedShape units coordinates) -> List (SelectedShape units coordinates)
+combineShapes : List (ShapeModel units coordinates) -> List (ShapeModel units coordinates)
 combineShapes shapes = shapes
 
 
@@ -260,14 +260,16 @@ type Msg
     | Generated (List (List Float))
     | Generate
     | MouseMove Float Float
-    | GetElement (Task.Task Browser.Dom.Error Browser.Dom.Element)
+    | MouseDown Float Float
+    | MouseUp Float Float
+    | GetElement (Task.Task Browser.Dom.Error Browser.Dom.Element, String)
     | GotElement Browser.Dom.Element
     | StayTheSame
 
 type alias Model =
     { numberString : String
     , code : String
-    , shapes : List (SelectedShape Pixels.Pixels Coordinates)
+    , shapes : List (ShapeModel Pixels.Pixels Coordinates)
     , canvasHeight : Int
     , canvasWidth : Int
     , distribution : Stats.TruncatedGaussianDistribution
@@ -275,16 +277,17 @@ type alias Model =
     , absMousePosition : (Float, Float)
     , elementPosition : (Float, Float)
     , relativePosition : (Float, Float)
+    , currentElementName : String
     }
 
 startingCode : String
 startingCode = "Circle 20 100 100\nRectangle 100 100 150 150\n" 
 
-updateSelectedShapes : List Bool -> List (SelectedShape units coordinates) -> List (SelectedShape units coordinates)
-updateSelectedShapes toSelect shapes = 
-    let updatedSelected isSelected current = { current | selected = isSelected}
+updateHoveredShapes : List Bool -> List (ShapeModel units coordinates) -> List (ShapeModel units coordinates)
+updateHoveredShapes toSelect shapes = 
+    let updateHovered isSelected current = { current | hovered = isSelected}
     in
-    List.map2 updatedSelected toSelect shapes
+    List.map2 updateHovered toSelect shapes
 
 init : Model
 init =
@@ -298,6 +301,7 @@ init =
     , absMousePosition = (0, 0)
     , elementPosition = (0, 0)
     , relativePosition = (0, 0)
+    , currentElementName = ""
     }
 
 updateSample : Model -> List (List Float) -> Model
@@ -335,22 +339,27 @@ updateOnMouseMove x y model =
     let 
         (elemX, elemY) = model.elementPosition
         relPos = (x - elemX, y - elemY)
-        first = 
-            { model 
-            | absMousePosition = (x, y)
-            , relativePosition = relPos
-            }
-        selectedShapeModel = selectShapes relPos first
     in 
-    updateTextWithSelected selectedShapeModel 
+    { model 
+    | absMousePosition = (x, y)
+    , relativePosition = relPos
+    }
+
+updateOnMouseDown : Model -> Model
+updateOnMouseDown model =  -- Mouse position kept track of separately
+    model
+
+updateOnMouseUp : Model -> Model
+updateOnMouseUp model = 
+    model
 
 
-updateTextWithSelected : Model -> Model
+updateTextWithSelected : Model -> UpdateOrCommand Model
 updateTextWithSelected model =
     let
         currentText = model.code
         lines = String.split "\n" currentText
-        selectedLines = List.filterMap (\s -> if s.selected then Just s.codeLine else Nothing) model.shapes 
+        selectedLines = List.filterMap (\s -> if s.hovered then Just s.codeLine else Nothing) model.shapes 
         updateLine i l =
             if List.member i selectedLines 
             then 
@@ -360,33 +369,73 @@ updateTextWithSelected model =
         updatedLines = List.indexedMap (\index line -> updateLine index line) lines
         newText = String.join "\n" updatedLines
     in
-    { model | code = newText }
+    JustModel { model | code = newText }
     
-
-selectShapes : (Float, Float) -> Model -> Model
-selectShapes (relX, relY) model =
+shapesWithMouseOnBoundary : (Float, Float) -> Model -> List Bool
+shapesWithMouseOnBoundary (relX, relY) model =
     let 
         point = (Point2d.fromPixels {x=relX, y=relY})
         select shape = onShapeBoundary shape point
-        nextSelected = List.map select <| extractShapes model.shapes
     in
-    { model | shapes = updateSelectedShapes nextSelected model.shapes }
+    List.map select <| extractShapes model.shapes
+
+hoveredShapesDirect : (Float, Float) -> Model -> Model
+hoveredShapesDirect (relX, relY) model =
+    let 
+        nextSelected = shapesWithMouseOnBoundary (relX, relY) model
+    in
+    { model | shapes = updateHoveredShapes nextSelected model.shapes }
+
+hoveredShapes : Model -> UpdateOrCommand Model
+hoveredShapes model =
+     JustModel <| hoveredShapesDirect model.relativePosition model
+    
+
+-- We want to chain things that either continue with updating functions
+-- , or run a command then go back to the begining
+type UpdateOrCommand m =
+    JustModel m
+    | WithCommand (Cmd Msg) m
+
+bind : (m -> UpdateOrCommand m) -> UpdateOrCommand m -> UpdateOrCommand m
+bind callback value =
+    case value of
+        JustModel model -> callback model
+        WithCommand command model -> WithCommand command model -- ignore later callbacks
+
+finish : UpdateOrCommand m -> (m, Cmd Msg)
+finish value = 
+    case value of
+        JustModel model -> (model, Cmd.none)
+        WithCommand command model -> (model, command)
+
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
-    case msg of
-        Generate -> 
-            (model, Random.generate Generated (Stats.generatorFromGaussian model.distribution 100))
-        Generated listOfSamples -> 
-            (updateSample model listOfSamples, Cmd.none)
-        NumberChange number ->
-            ({ model | numberString = number }, Cmd.none)
-        UpdateCode text ->
-            ({ model | code = text, shapes = shapesFromText text}, Cmd.none)
-        MouseMove x y -> (updateOnMouseMove x y model, Cmd.none)
-        GetElement task -> (model, cmdFromGetElement task)
-        GotElement elem -> (updateModelWithElement elem model, Cmd.none)
-        StayTheSame -> (model, Cmd.none)
+    let 
+        firstUpdate : Model -> UpdateOrCommand Model
+        firstUpdate = case msg of
+            Generate -> 
+                WithCommand <| Random.generate Generated (Stats.generatorFromGaussian model.distribution 100)
+            Generated listOfSamples -> 
+                JustModel << (swap updateSample) listOfSamples
+            NumberChange number ->
+                JustModel << \m -> { m | numberString = number }
+            UpdateCode text ->
+                JustModel << \m -> { m | code = text, shapes = shapesFromText text}
+            MouseMove x y -> JustModel << updateOnMouseMove x y 
+            MouseDown _ _ -> JustModel << updateOnMouseDown
+            MouseUp _ _ -> JustModel << updateOnMouseUp
+            GetElement (task, name) -> WithCommand (cmdFromGetElement task) << (\m -> {m | currentElementName = name})
+            GotElement elemAndName -> JustModel << updateModelWithElement elemAndName
+            StayTheSame -> JustModel
+        
+    in 
+    JustModel model
+    |> bind firstUpdate  -- After this is things we always want to do, they may have commands too
+    |> bind hoveredShapes
+    |> bind updateTextWithSelected
+    |> finish
 
 
 -- INITIALISATION AND VIEWING
@@ -451,6 +500,9 @@ debugView thing =
 
 view : Model -> Html.Html Msg
 view model =
+    let
+        getElementByName name = (Browser.Dom.getElement name, name)
+    in
     Html.div []
         [ Html.div [ Html.Events.onMouseOver (MouseMove 100 100 )]
             [ Html.textarea
@@ -459,21 +511,22 @@ view model =
                 , Html.Attributes.id "my-thing"
                 , Html.Attributes.cols 79
                 , Html.Events.onInput (\txt -> UpdateCode txt)
-                , Html.Events.onMouseOver (GetElement <| Browser.Dom.getElement "my-thing")
+                , Html.Events.onMouseOver (GetElement <| getElementByName "my-thing")
                 ]
                 []
             ]
         , Html.div 
             [ Html.Attributes.id "other" 
-            , Html.Events.onMouseOver (GetElement <| Browser.Dom.getElement "other")
+            , Html.Events.onMouseOver (GetElement <| getElementByName "other")
             ] [Html.button [Html.Events.onClick Generate] [Html.text "Generate"]]
         , debugView model.shapes
+        , debugView model.currentElementName
         , htmlCoords model.absMousePosition
         , htmlCoords model.elementPosition
         , htmlCoords model.relativePosition
         , Html.div 
             [ Html.Attributes.id "canvas"
-            , Html.Events.onMouseOver (GetElement <| Browser.Dom.getElement "canvas")
+            , Html.Events.onMouseOver (GetElement <| getElementByName "canvas")
             ]
             [ Svg.svg
                 [ Html.Attributes.height model.canvasHeight
@@ -492,11 +545,15 @@ view model =
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     let 
-        first = (Json.Decode.field "pageX" Json.Decode.float)
-        second = (Json.Decode.field "pageY" Json.Decode.float)
-        decoder = Json.Decode.map2 MouseMove first second
+        x = (Json.Decode.field "pageX" Json.Decode.float)
+        y = (Json.Decode.field "pageY" Json.Decode.float)
+        decoder = Json.Decode.map2 MouseMove x y
     in 
-    Sub.batch [Browser.Events.onMouseMove decoder]
+    Sub.batch 
+        [ Browser.Events.onMouseMove decoder
+        , Browser.Events.onMouseDown decoder
+        , Browser.Events.onMouseUp decoder
+        ]
 
 main : Program () Model Msg
 main =
