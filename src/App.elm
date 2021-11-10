@@ -131,13 +131,16 @@ fromIndividualShape attributes shape =
 svgFromShapeData : ShapeModel units coordinates -> List (Svg.Svg msg)
 svgFromShapeData selectedShape =
     let 
-        {shape, hovered} = selectedShape
-        stroke = if hovered then "Red" else "Black"
+        stroke = case (selectedShape.hovered, selectedShape.selected) of 
+            (_, True) -> "Blue" 
+            (True, False) -> "Red"
+            (_, _) -> "Black"
         attributes = [ Svg.Attributes.stroke stroke ]
         uncertainAttributes = [ Svg.Attributes.stroke "Grey"]
         -- TODO: Make the uncertain shapes visible on screen
+        uncertainShapes = (List.map (fromIndividualShape uncertainAttributes) selectedShape.uncertainty)
     in
-    [fromIndividualShape attributes shape] ++ (List.map (fromIndividualShape uncertainAttributes) selectedShape.uncertainty)
+    fromIndividualShape attributes selectedShape.shape :: uncertainShapes
 
 -- PARSING
 
@@ -278,6 +281,7 @@ type alias Model =
     , elementPosition : (Float, Float)
     , relativePosition : (Float, Float)
     , currentElementName : String
+    , mouseDown : Bool
     }
 
 startingCode : String
@@ -302,6 +306,7 @@ init =
     , elementPosition = (0, 0)
     , relativePosition = (0, 0)
     , currentElementName = ""
+    , mouseDown = False
     }
 
 updateSample : Model -> List (List Float) -> Model
@@ -347,11 +352,13 @@ updateOnMouseMove x y model =
 
 updateOnMouseDown : Model -> Model
 updateOnMouseDown model =  -- Mouse position kept track of separately
-    model
+    let makeSelected shape = { shape | selected = shape.hovered }
+    in { model | shapes = List.map makeSelected model.shapes , mouseDown = True}
 
 updateOnMouseUp : Model -> Model
 updateOnMouseUp model = 
-    model
+    let removeSelection shape = { shape | selected = False }
+    in { model | shapes = List.map removeSelection model.shapes , mouseDown = False}
 
 
 updateTextWithSelected : Model -> UpdateOrCommand Model
@@ -389,7 +396,7 @@ hoveredShapesDirect (relX, relY) model =
 hoveredShapes : Model -> UpdateOrCommand Model
 hoveredShapes model =
      JustModel <| hoveredShapesDirect model.relativePosition model
-    
+
 
 -- We want to chain things that either continue with updating functions
 -- , or run a command then go back to the begining
@@ -460,8 +467,8 @@ myRectangleShape =
     Rectangle <| Rectangle2d.with record
 
 
-canvas : Model -> Html.Html msg
-canvas model =
+drawCanvasFromModel : Model -> Html.Html msg
+drawCanvasFromModel model =
     let
         -- topLeftFrame = Frame2d.atPoint (Point2d.pixels 100 100)
         elements = Svg.g [ ] (List.concatMap svgFromShapeData <| model.shapes)
@@ -521,6 +528,7 @@ view model =
             ] [Html.button [Html.Events.onClick Generate] [Html.text "Generate"]]
         , debugView model.shapes
         , debugView model.currentElementName
+        , debugView model.mouseDown
         , htmlCoords model.absMousePosition
         , htmlCoords model.elementPosition
         , htmlCoords model.relativePosition
@@ -532,7 +540,7 @@ view model =
                 [ Html.Attributes.height model.canvasHeight
                 , Html.Attributes.width model.canvasWidth
                 ]
-                [ canvas model ]
+                [ drawCanvasFromModel model ]
             ]
         , Html.div []
             [ Plots.viewScatter <| toPlottableSample model.currentSample]
@@ -547,12 +555,12 @@ subscriptions _ =
     let 
         x = (Json.Decode.field "pageX" Json.Decode.float)
         y = (Json.Decode.field "pageY" Json.Decode.float)
-        decoder = Json.Decode.map2 MouseMove x y
+        decoder messenger = Json.Decode.map2 messenger x y
     in 
     Sub.batch 
-        [ Browser.Events.onMouseMove decoder
-        , Browser.Events.onMouseDown decoder
-        , Browser.Events.onMouseUp decoder
+        [ Browser.Events.onMouseMove (decoder MouseMove)
+        , Browser.Events.onMouseDown (decoder MouseDown)
+        , Browser.Events.onMouseUp (decoder MouseUp)
         ]
 
 main : Program () Model Msg
