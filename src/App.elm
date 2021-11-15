@@ -28,6 +28,11 @@ import Rectangle2d
 import Quantity
 import Svg.Attributes
 import Rectangle2d
+import Point2d exposing (coordinates)
+import Pixels exposing (Pixels)
+import Circle2d exposing (Circle2d)
+import Rectangle2d exposing (Rectangle2d)
+import Vector2d exposing (Vector2d)
 
 swap : (a -> b -> c) -> b -> a -> c
 swap f x y = f y x
@@ -156,6 +161,20 @@ circleLineToShape args =
                 Just <| Circle (Circle2d.withRadius (Pixels.float r) (Point2d.fromTuple Pixels.float (x, y)))
         _ -> Nothing
 
+circleToLine : Circle2d.Circle2d Pixels.Pixels coordinates -> String
+circleToLine circle = 
+   let
+       convert q = String.fromFloat <| Pixels.inPixels q
+       r = Circle2d.radius circle
+       p = Circle2d.centerPoint circle
+       x = Point2d.xCoordinate p
+       y = Point2d.yCoordinate p
+       words = "Circle" :: List.map convert [r, x, y]
+   in
+   String.join " " words
+        
+
+
 rectLineToShape : List String -> Maybe (Shape Pixels.Pixels coordinates)
 rectLineToShape args =
     case args of 
@@ -175,6 +194,20 @@ rectLineToShape args =
                 Just <| Rectangle (Rectangle2d.with record)
         _ -> Nothing
 
+-- TODO: Make these opposites of each other, right now there's something wrong
+
+rectangleToLine : Rectangle2d.Rectangle2d Pixels.Pixels coordinates -> String
+rectangleToLine rect = 
+   let
+       convert q = String.fromFloat <| Pixels.inPixels q
+       vertices = Rectangle2d.vertices rect
+       result = case vertices of 
+           [p1, _, p2, _] -> [Point2d.xCoordinate p1, Point2d.xCoordinate p2, Point2d.yCoordinate p1, Point2d.yCoordinate p2]
+           _ -> []
+       words = "Rectangle" :: List.map convert result
+   in
+   String.join " " words
+
 lineToBaseShape : String -> Int -> Maybe (ShapeModel Pixels.Pixels coordinates)
 lineToBaseShape text lineIndex = 
     let 
@@ -189,6 +222,12 @@ lineToBaseShape text lineIndex =
                 "Circle" -> Maybe.map toSelected (circleLineToShape args)
                 "Rectangle" -> Maybe.map toSelected (rectLineToShape args)
                 _ -> Nothing
+
+baseShapeToLine : ShapeModel Pixels.Pixels coordinates -> String
+baseShapeToLine shapeModel =
+    case shapeModel.shape of
+        Circle circle -> circleToLine circle
+        Rectangle rect -> rectangleToLine rect
 
 uncertainRectangle : Rectangle2d.Rectangle2d units coordinates -> List (Rectangle2d.Rectangle2d units coordinates)
 uncertainRectangle rect =
@@ -278,6 +317,7 @@ type alias Model =
     , distribution : Stats.TruncatedGaussianDistribution
     , currentSample : List (List Float)
     , absMousePosition : (Float, Float)
+    , absPositionWhenDown : (Float, Float)
     , elementPosition : (Float, Float)
     , relativePosition : (Float, Float)
     , currentElementName : String
@@ -307,6 +347,7 @@ init =
     , relativePosition = (0, 0)
     , currentElementName = ""
     , mouseDown = False
+    , absPositionWhenDown = (0, 0)
     }
 
 updateSample : Model -> List (List Float) -> Model
@@ -348,18 +389,65 @@ updateOnMouseMove x y model =
     { model 
     | absMousePosition = (x, y)
     , relativePosition = relPos
-    }
+    } |> moveSelectedShapes (x - Tuple.first model.absPositionWhenDown, y - Tuple.second model.absPositionWhenDown) 
+    -- For all selected shapes, move according to mouse
 
-updateOnMouseDown : Model -> Model
-updateOnMouseDown model =  -- Mouse position kept track of separately
+moveCircle : (Float, Float) -> Circle2d.Circle2d Pixels.Pixels coordinates -> Circle2d.Circle2d Pixels.Pixels coordinates
+moveCircle (x, y) circle = Circle2d.translateBy (Vector2d.fromPixels {x=x, y=y}) circle
+
+moveRectangle : (Float, Float) -> Rectangle2d.Rectangle2d Pixels.Pixels coordinates -> Rectangle2d.Rectangle2d Pixels.Pixels coordinates
+moveRectangle (x, y) rect = Rectangle2d.translateBy (Vector2d.fromPixels {x=x, y=y}) rect
+
+moveSelectedShapes : (Float, Float) -> Model -> Model
+moveSelectedShapes moveVector model =
+    let 
+        moveShape : (Float, Float) -> Shape Pixels.Pixels coordinates -> Shape Pixels.Pixels coordinates
+        moveShape vector shape = 
+            case shape of
+                Circle circle -> Circle <| moveCircle vector circle
+                Rectangle rect -> Rectangle <| moveRectangle vector rect
+
+        skipSelected : (Shape units coordinates -> Shape units coordinates) -> ShapeModel units coordinates -> ShapeModel units coordinates
+        skipSelected fun shapeModel = 
+            if shapeModel.selected then {shapeModel | shape = fun shapeModel.shape} else shapeModel
+
+        newShapes = List.map (skipSelected <| moveShape moveVector) model.shapes
+    in
+    { model | shapes = newShapes }
+
+
+updateOnMouseDown : Float -> Float -> Model -> Model
+updateOnMouseDown x y model =  -- Mouse position kept track of separately
     let makeSelected shape = { shape | selected = shape.hovered }
-    in { model | shapes = List.map makeSelected model.shapes , mouseDown = True}
+    in 
+    { model 
+    | shapes = List.map makeSelected model.shapes 
+    , mouseDown = True
+    , absPositionWhenDown = (x, y)
+    }
 
 updateOnMouseUp : Model -> Model
 updateOnMouseUp model = 
     let removeSelection shape = { shape | selected = False }
     in { model | shapes = List.map removeSelection model.shapes , mouseDown = False}
 
+updateTextWithShape : Model -> UpdateOrCommand Model
+updateTextWithShape model =
+    let
+        currentText = model.code
+        lines = String.split "\n" currentText
+        selectedLines = List.filterMap (\s -> if s.hovered then Just s.codeLine else Nothing) model.shapes 
+        updateLine i l =
+            let 
+                shape = List.head <| List.filter (\s -> s.codeLine == i) model.shapes  -- it's a maybe
+            in
+            case shape of 
+                Just aShape -> baseShapeToLine aShape
+                Nothing -> l
+        updatedLines = List.indexedMap (\index line -> updateLine index line) lines
+        newText = String.join "\n" updatedLines
+    in
+    JustModel { model | code = newText }
 
 updateTextWithSelected : Model -> UpdateOrCommand Model
 updateTextWithSelected model =
@@ -430,8 +518,9 @@ update msg model =
                 JustModel << \m -> { m | numberString = number }
             UpdateCode text ->
                 JustModel << \m -> { m | code = text, shapes = shapesFromText text}
-            MouseMove x y -> JustModel << updateOnMouseMove x y 
-            MouseDown _ _ -> JustModel << updateOnMouseDown
+            MouseMove x y -> 
+                \m -> (JustModel <| updateOnMouseMove x y m) -- |> bind updateTextWithShape
+            MouseDown x y -> JustModel << updateOnMouseDown x y
             MouseUp _ _ -> JustModel << updateOnMouseUp
             GetElement (task, name) -> WithCommand (cmdFromGetElement task) << (\m -> {m | currentElementName = name})
             GotElement elemAndName -> JustModel << updateModelWithElement elemAndName
@@ -526,12 +615,6 @@ view model =
             [ Html.Attributes.id "other" 
             , Html.Events.onMouseOver (GetElement <| getElementByName "other")
             ] [Html.button [Html.Events.onClick Generate] [Html.text "Generate"]]
-        , debugView model.shapes
-        , debugView model.currentElementName
-        , debugView model.mouseDown
-        , htmlCoords model.absMousePosition
-        , htmlCoords model.elementPosition
-        , htmlCoords model.relativePosition
         , Html.div 
             [ Html.Attributes.id "canvas"
             , Html.Events.onMouseOver (GetElement <| getElementByName "canvas")
@@ -542,12 +625,16 @@ view model =
                 ]
                 [ drawCanvasFromModel model ]
             ]
-        , Html.div []
-            [ Plots.viewScatter <| toPlottableSample model.currentSample]
-        , Html.div []
-            [ Html.text <| "Total number of shapes: " ++ String.fromInt (List.length model.shapes)
-            ]
-        , Html.div [] [ Plots.viewPlot timeSeries]
+        , htmlCoords model.absMousePosition
+        , htmlCoords model.elementPosition
+        , htmlCoords model.relativePosition
+        , debugView model
+        -- , Html.div []
+            -- [ Plots.viewScatter <| toPlottableSample model.currentSample]
+        -- , Html.div []
+            -- [ Html.text <| "Total number of shapes: " ++ String.fromInt (List.length model.shapes)
+            -- ]
+        -- , Html.div [] [ Plots.viewPlot timeSeries]
         ]
 
 subscriptions : Model -> Sub Msg
