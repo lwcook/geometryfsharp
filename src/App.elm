@@ -50,6 +50,7 @@ type Shape units coordinates
 
 type alias ShapeModel units coordinates = 
     { shape : Shape units coordinates
+    , shapeWhenSelected : Maybe (Shape units coordinates)
     , hovered : Bool
     , codeLine : Int
     , code : String
@@ -213,7 +214,7 @@ lineToBaseShape text lineIndex =
     let 
         args = String.split " " text 
         first = List.head args
-        toSelected shape = ShapeModel shape False lineIndex text [] False
+        toSelected shape = ShapeModel shape Nothing False lineIndex text [] False
     in
     case first of 
         Nothing -> Nothing
@@ -407,18 +408,22 @@ moveSelectedShapes moveVector model =
                 Circle circle -> Circle <| moveCircle vector circle
                 Rectangle rect -> Rectangle <| moveRectangle vector rect
 
-        skipSelected : (Shape units coordinates -> Shape units coordinates) -> ShapeModel units coordinates -> ShapeModel units coordinates
+        skipSelected : (ShapeModel units coordinates -> Shape units coordinates) -> ShapeModel units coordinates -> ShapeModel units coordinates
         skipSelected fun shapeModel = 
-            if shapeModel.selected then {shapeModel | shape = fun shapeModel.shape} else shapeModel
+            if shapeModel.selected then {shapeModel | shape = fun shapeModel} else shapeModel
 
-        newShapes = List.map (skipSelected <| moveShape moveVector) model.shapes
+        newShapes = List.map (skipSelected <| (\s -> moveShape moveVector (Maybe.withDefault s.shape s.shapeWhenSelected))) model.shapes
     in
     { model | shapes = newShapes }
 
 
 updateOnMouseDown : Float -> Float -> Model -> Model
 updateOnMouseDown x y model =  -- Mouse position kept track of separately
-    let makeSelected shape = { shape | selected = shape.hovered }
+    let makeSelected shape = 
+            { shape 
+            | selected = shape.hovered 
+            , shapeWhenSelected = if shape.hovered then Just shape.shape else Nothing
+            }
     in 
     { model 
     | shapes = List.map makeSelected model.shapes 
@@ -519,7 +524,7 @@ update msg model =
             UpdateCode text ->
                 JustModel << \m -> { m | code = text, shapes = shapesFromText text}
             MouseMove x y -> 
-                \m -> (JustModel <| updateOnMouseMove x y m) -- |> bind updateTextWithShape
+                \m -> (JustModel <| updateOnMouseMove x y m) |> bind updateTextWithShape
             MouseDown x y -> JustModel << updateOnMouseDown x y
             MouseUp _ _ -> JustModel << updateOnMouseUp
             GetElement (task, name) -> WithCommand (cmdFromGetElement task) << (\m -> {m | currentElementName = name})
