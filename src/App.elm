@@ -203,7 +203,7 @@ rectangleToLine rect =
        convert q = String.fromFloat <| Pixels.inPixels q
        vertices = Rectangle2d.vertices rect
        result = case vertices of 
-           [p1, _, p2, _] -> [Point2d.xCoordinate p1, Point2d.xCoordinate p2, Point2d.yCoordinate p1, Point2d.yCoordinate p2]
+           [p1, _, p2, _] -> [Point2d.xCoordinate p1, Point2d.yCoordinate p1, Point2d.xCoordinate p2, Point2d.yCoordinate p2]
            _ -> []
        words = "Rectangle" :: List.map convert result
    in
@@ -238,10 +238,8 @@ uncertainRectangle rect =
          newD dims = Rectangle2d.withDimensions dims angle (Rectangle2d.centerPoint rect)
     in
     List.map newD 
-        [ (Quantity.multiplyBy 0.9 l0, h0)
-        , (Quantity.multiplyBy 1.1 l0, h0)
-        , (l0, Quantity.multiplyBy 0.9 h0)
-        , (l0, Quantity.multiplyBy 1.1 h0)
+        [ (Quantity.multiplyBy 0.9 l0, Quantity.multiplyBy 0.9 h0)
+        , (Quantity.multiplyBy 1.1 l0, Quantity.multiplyBy 1.1 h0)
         ]
 
 uncertainCircle : Circle2d.Circle2d units coordinates -> List (Circle2d.Circle2d units coordinates)
@@ -254,14 +252,11 @@ uncertainCircle circ =
     List.map (\r -> Circle2d.withRadius r (Circle2d.centerPoint circ)) newR
     
 
-updateShapeWithUncertainty : ShapeModel units coordinates -> Maybe (ShapeModel units coordinates)
+updateShapeWithUncertainty : ShapeModel units coordinates -> ShapeModel units coordinates
 updateShapeWithUncertainty start = 
-    let
-        new = case start.shape of 
-                Rectangle rect -> { start | uncertainty = List.map Rectangle (uncertainRectangle rect)}
-                Circle circ -> { start | uncertainty = List.map Circle (uncertainCircle circ) }
-    in
-    Just new
+    case start.shape of 
+        Rectangle rect -> { start | uncertainty = List.map Rectangle (uncertainRectangle rect)}
+        Circle circ -> { start | uncertainty = List.map Circle (uncertainCircle circ) }
     
 
 nextStep : ShapeModel units coordinates -> Maybe (ShapeModel units coordinates)
@@ -270,7 +265,7 @@ nextStep shape = Just shape
 lineToShape : String -> Int -> Maybe (ShapeModel Pixels.Pixels coordinates)
 lineToShape line lineIndex = 
     lineToBaseShape line lineIndex
-    |> Maybe.andThen updateShapeWithUncertainty
+    |> Maybe.andThen (\s -> Just <| updateShapeWithUncertainty s)
     |> Maybe.andThen nextStep
 
 
@@ -300,6 +295,7 @@ combineShapes shapes = shapes
 type Msg
     = NumberChange String
     | UpdateCode String
+    | UpdateFromCode
     | Generated (List (List Float))
     | Generate
     | MouseMove Float Float
@@ -326,7 +322,8 @@ type alias Model =
     }
 
 startingCode : String
-startingCode = "Circle 20 100 100\nRectangle 100 100 150 150\n" 
+startingCode = "Circle 20 100 100"
+-- startingCode = "Circle 20 100 100\nRectangle 100 100 150 150\n" 
 
 updateHoveredShapes : List Bool -> List (ShapeModel units coordinates) -> List (ShapeModel units coordinates)
 updateHoveredShapes toSelect shapes = 
@@ -522,9 +519,11 @@ update msg model =
             NumberChange number ->
                 JustModel << \m -> { m | numberString = number }
             UpdateCode text ->
-                JustModel << \m -> { m | code = text, shapes = shapesFromText text}
+                WithCommand Cmd.none << \m -> { m | code = text, shapes = shapesFromText text}
+            UpdateFromCode -> 
+                JustModel << \m -> { m | shapes = shapesFromText m.code}
             MouseMove x y -> 
-                \m -> (JustModel <| updateOnMouseMove x y m) |> bind updateTextWithShape
+                \m -> (JustModel <| updateOnMouseMove x y m)
             MouseDown x y -> JustModel << updateOnMouseDown x y
             MouseUp _ _ -> JustModel << updateOnMouseUp
             GetElement (task, name) -> WithCommand (cmdFromGetElement task) << (\m -> {m | currentElementName = name})
@@ -534,8 +533,11 @@ update msg model =
     in 
     JustModel model
     |> bind firstUpdate  -- After this is things we always want to do, they may have commands too
+    |> bind updateTextWithShape
+    -- |> bind (JustModel << \m -> {m | shapes = shapesFromText m.code})
     |> bind hoveredShapes
-    |> bind updateTextWithSelected
+    -- |> bind updateTextWithSelected
+    |> bind (JustModel << \m -> {m | shapes = List.map updateShapeWithUncertainty m.shapes})
     |> finish
 
 
@@ -612,6 +614,8 @@ view model =
                 , Html.Attributes.id "my-thing"
                 , Html.Attributes.cols 79
                 , Html.Events.onInput (\txt -> UpdateCode txt)
+                , Html.Events.onMouseLeave (UpdateFromCode)
+                , Html.Events.onMouseOut (UpdateFromCode)
                 , Html.Events.onMouseOver (GetElement <| getElementByName "my-thing")
                 ]
                 []
